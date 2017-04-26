@@ -1,0 +1,14 @@
+1- CreateNewFileCSV.py:
+    This file extracts the data from the original dataset.
+2- CreateEmotionDicts.py:
+    Prepares the emotion dictionaries to be used in other files.
+3- CleanDataAndCreateDict.py:
+    Prepares the data structure for the data processing and emotion calculations.
+4- Create Variables.py:
+    Calculates emotions using the 0 and 1 association scores.
+5- Create Variables Twitter.py:
+    Calculates emotions using the standardized association scores from twitter.
+6- CreatOutPutFileExcel.py:
+    OutPuts the new dataset toan XLS file.
+7- Final_Code.Rmd:
+    The R code in which all the analysis occure.

@@ -1,0 +1,735 @@
+---
+title: "Final_Project"
+author: "Mohammed Aldhoayan"
+date: "4/16/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library('ROCR')
+library(e1071)
+library('ggplot2') 
+library(lattice)  
+library(knitr)
+library(caret)
+library("RTextTools")
+library(rpart) # for decision tree
+library(ada) # for adaboost
+library(dplyr)
+library(knitr)
+library(DT)
+library(xtable)
+require(broom)
+library(class)  
+library(fpc)
+library(cluster)
+library('foreign')
+library('ggplot2')
+library(ggfortify)
+library(GPArotation)
+library(semTools)
+library(MASS)
+library(lavaan)
+library(semPlot)
+library(psych)
+```
+
+
+
+```{r}
+dataDirectory <- "" # put your own folder here
+dataset <- read.csv(paste(dataDirectory, 'seasons_twitter_MyPersonality5.csv', sep=""), header = TRUE)
+
+
+OriginalData <- data.frame(dataset[sample(nrow(dataset)),])
+data = OriginalData
+
+#The below code extracts the IDs of indivisuals with more than 10 posts.
+UniqueIDs = names(sort(table(data$ID),decreasing = T))
+UniqueIDs_50 = c()
+for (id in UniqueIDs){
+  print(id)
+  SubSet = data[is.element(data$ID, id),]
+  if(dim(SubSet)[1] > 10){UniqueIDs_50 = c(UniqueIDs_50,id)}
+  
+}
+UniqueIDs = UniqueIDs_50
+length(UniqueIDs)
+
+
+# Gets the average scores of all posts for the indivisuals with the passed IDs.
+Get.Set <- function(data,IDS){
+  set = data.frame()
+  
+  for (id in IDS){
+    SubSet = data[is.element(data$ID, id),]
+    Newset = c(mean(SubSet$anger),mean(SubSet$anticipation),mean(SubSet$disgust),mean(SubSet$fear),mean(SubSet$joy),
+               mean(SubSet$negative),mean(SubSet$positive),mean(SubSet$sadness),mean(SubSet$surprise),mean(SubSet$trust)
+               ,SubSet$cEXT[1],SubSet$cNEU[1],
+               SubSet$cAGR[1],SubSet$cCON[1],SubSet$cOPN[1],SubSet$NETWORKSIZE[1])
+    
+    set = rbind(set,Newset)
+  }
+  row.names(set) = IDS
+  colnames(set) = c("anger", "anticipation", "disgust",  "fear",   "joy", "negative",
+                    "positive", "sadness", "surprise", "trust",
+                    "cEXT", "cNEU", "cAGR", "cCON", "cOPN", "NETWORKSIZE")
+  set$cEXT <- set$cEXT - 1
+  set$cNEU <- set$cNEU - 1
+  set$cAGR <- set$cAGR - 1
+  set$cCON <- set$cCON - 1
+  set$cOPN <- set$cOPN - 1
+  return(set)
+}
+Get.Set.PersanolatyNumbers <- function(data,IDS){
+  set = data.frame()
+  
+  for (id in IDS){
+    SubSet = data[is.element(data$ID, id),]
+    Newset = c(mean(SubSet$anger),mean(SubSet$anticipation),mean(SubSet$disgust),mean(SubSet$fear),mean(SubSet$joy),
+               mean(SubSet$negative),mean(SubSet$positive),mean(SubSet$sadness),mean(SubSet$surprise),mean(SubSet$trust),
+               mean(SubSet$Postive_Emotions),mean(SubSet$Negative_Emotions),SubSet$sEXT[1],SubSet$sNEU[1],
+               SubSet$sAGR[1],SubSet$sCON[1],SubSet$sOPN[1],SubSet$NETWORKSIZE[1])
+    
+    set = rbind(set,Newset)
+  }
+  row.names(set) = IDS
+  colnames(set) = c("anger", "anticipation", "disgust",  "fear",   "joy", "negative",
+                    "positive", "sadness", "surprise", "trust","Postive_Emotions", "Negative_Emotions",
+                    "sEXT", "sNEU", "sAGR", "sCON", "sOPN", "NETWORKSIZE")
+  return(set)
+}
+
+# Gets the average scores of all posts for the indivisuals with the passed IDs grouped by the season in which they were posted in.
+Get.Set.Seasons <- function(data,IDS){
+  set = data.frame()
+    for (ID_ONE in IDS){
+      for (Season in c(1,3,4)){
+        
+      SubSet = data[is.element(data$ID, ID_ONE),]
+      SubSet = SubSet[is.element(SubSet$Months, Season),]
+      Newset = c(mean(SubSet$anger),mean(SubSet$anticipation),mean(SubSet$disgust),mean(SubSet$fear),mean(SubSet$joy),
+                 mean(SubSet$negative),mean(SubSet$positive),mean(SubSet$sadness),mean(SubSet$surprise),mean(SubSet$trust),
+                 mean(SubSet$Postive_Emotions),mean(SubSet$Negative_Emotions),as.numeric(SubSet$cEXT[1]),as.numeric(SubSet$cNEU[1]),
+                 as.numeric(SubSet$cAGR[1]),as.numeric(SubSet$cCON[1]),as.numeric(SubSet$cOPN[1]),SubSet$NETWORKSIZE[1],SubSet$Months[1])
+      Newset = t(as.data.frame(Newset,nrow=1))
+      Newset = cbind(ID_ONE,Newset)
+      set = rbind(set,Newset)
+  }
+  }
+  colnames(set) = c("id","anger", "anticipation", "disgust",  "fear",   "joy", "negative",
+                    "positive", "sadness", "surprise", "trust","Postive_Emotions", "Negative_Emotions",
+                    "cEXT", "cNEU", "cAGR", "cCON", "cOPN", "NETWORKSIZE","Seasons")
+  #set$cEXT <- set$cEXT - 1
+  #set$cNEU <- set$cNEU - 1
+  #set$cAGR <- set$cAGR - 1
+  #set$cCON <- set$cCON - 1
+  #set$cOPN <- set$cOPN - 1
+  
+  return(set)
+}
+
+# Gets the average scores of all posts for the indivisuals with the passed IDs grouped by the hour in which they were posted in.
+Get.Set.Hours <- function(data,IDS){
+  set = data.frame()
+    for (ID_ONE in IDS){
+      for (Hour in seq(1, 24)){
+        
+      SubSet = data[is.element(data$ID, ID_ONE),]
+      SubSet = SubSet[is.element(SubSet$Hour, Hour),]
+      Newset = c(mean(SubSet$anger),mean(SubSet$anticipation),mean(SubSet$disgust),mean(SubSet$fear),mean(SubSet$joy),
+                 mean(SubSet$negative),mean(SubSet$positive),mean(SubSet$sadness),mean(SubSet$surprise),mean(SubSet$trust),
+                 mean(SubSet$Postive_Emotions),mean(SubSet$Negative_Emotions),as.numeric(SubSet$cEXT[1]),as.numeric(SubSet$cNEU[1]),
+                 as.numeric(SubSet$cAGR[1]),as.numeric(SubSet$cCON[1]),as.numeric(SubSet$cOPN[1]),SubSet$NETWORKSIZE[1],SubSet$Hour[1])
+      Newset = t(as.data.frame(Newset,nrow=1))
+      Newset = cbind(ID_ONE,Newset)
+      set = rbind(set,Newset)
+  }
+  }
+  colnames(set) = c("id","anger", "anticipation", "disgust",  "fear",   "joy", "negative",
+                    "positive", "sadness", "surprise", "trust","Postive_Emotions", "Negative_Emotions",
+                    "cEXT", "cNEU", "cAGR", "cCON", "cOPN", "NETWORKSIZE","Hour")
+  #set$cEXT <- set$cEXT - 1
+  #set$cNEU <- set$cNEU - 1
+  #set$cAGR <- set$cAGR - 1
+  #set$cCON <- set$cCON - 1
+  #set$cOPN <- set$cOPN - 1
+  
+  return(set)
+}
+
+# The following functions are the classification functions.
+Evaluate_10fold_glm <- function(data,model,test.column,cutoff){
+  # False positive rate
+  FPR <- NULL
+  # True negative rate
+  TNR <- NULL
+  # True positive rate
+  TPR <- NULL
+  # Accuracy
+  acc <- NULL
+  #Precision
+  Precision <- NULL
+  #Recall
+  Recall <- NULL
+  #F1
+  Fscore <- NULL
+  #Results
+  ytests <- c()
+  ptests <- c()
+  #Create 10 equally size folds
+  folds <- cut(seq(1,length(UniqueIDs)),breaks=10,labels=FALSE)
+  
+  #library(caret)  # confusion matrix
+  
+  #Perform 10 fold cross validation
+  for(i in 1:10){
+    #Segement your data by fold using the which() function 
+    test <- which(folds==i,arr.ind=TRUE)
+    trainIDS = UniqueIDs[-test]
+    testIDs = UniqueIDs[test]
+    train = Get.Set(data,trainIDS)
+    test = Get.Set(data,testIDs)
+    
+    m1 = glm(model,family=binomial,data=data.frame(train))
+    
+    results_prob <- predict(m1,newdata=data.frame(test),type="response")
+    ytest = test[,test.column]
+    ytests <- c(ytests,ytest)
+    ptests <- c(ptests,results_prob)
+    
+    
+    # If prob > 0.5 then 1, else 0
+    results <- ifelse(results_prob > cutoff,1,0)
+    
+    # Actual answers
+    answers <- ytest
+    
+    # Accuracy calculation
+    misClasificError <- mean(answers != results)
+    
+    # Collecting results
+    acc[i] <- 1-misClasificError
+    
+    # Confusion matrix
+    cm <- confusionMatrix(data=results, reference=answers)
+    TP <- cm$table[1]
+    FP <- cm$table[2]
+    FN <- cm$table[3]
+    TN <- cm$table[4]
+    
+    Precision[i] <- TP/(TP + FP)
+    Recall[i] <- TP/(TP + FN)
+    Fscore[i] <- 2*Precision[i]*Recall[i]/(Precision[i] + Recall[i])
+    TNR[i] <- TN/(TN + FP)
+    TPR[i] <- TP/(TP + FN)
+    FPR[i] <- FP/(TN + FP)
+  }
+  
+  ROCdata=data.frame(predictions=ptests,labels=ytests)
+  pred <- prediction(ROCdata$predictions,ROCdata$labels)
+  auc <- performance(pred,"auc")
+  auc <- unlist(slot(auc, "y.values"))
+  
+  perf <- performance(pred, "sens", "fpr")
+  
+  plot(perf)
+  
+  print("Average accuracy of the model:")
+  print(mean(acc))
+  print("Average error of the model:")
+  print(1-mean(acc))
+  
+  print("Average Precision of the model:")
+  print(mean(Precision))
+  
+  print("Average Recall of the model:")
+  print(mean(Recall))
+  
+  print("Average Fscore of the model:")
+  print(mean(Fscore))
+  
+  print("Average specificity, of the model:")
+  print(mean(TNR))
+  
+  print("Average sensitivity, of the model:")
+  print(mean(TPR))
+  
+  print("Average FPR of the model:")
+  print(mean(FPR))
+  
+  print('Area Under The Curve:')
+  print(auc)
+  print(cm)
+}
+Evaluate_10fold_nb <- function(data,model,test.column){
+  # False positive rate
+  FPR <- NULL
+  # True negative rate
+  TNR <- NULL
+  # True positive rate
+  TPR <- NULL
+  # Accuracy
+  acc <- NULL
+  #Precision
+  Precision <- NULL
+  #Recall
+  Recall <- NULL
+  #F1
+  Fscore <- NULL
+  #Results
+  ytests <- c()
+  ptests <- c()
+  #Create 10 equally size folds
+  folds <- cut(seq(1,length(UniqueIDs)),breaks=10,labels=FALSE)
+  
+  #library(caret)  # confusion matrix
+  
+  #Perform 10 fold cross validation
+  for(i in 1:10){
+    #Segement your data by fold using the which() function 
+    test <- which(folds==i,arr.ind=TRUE)
+    trainIDS = UniqueIDs[-test]
+    testIDs = UniqueIDs[test]
+    train = Get.Set(data,trainIDS)
+    test = Get.Set(data,testIDs)
+    m1 = naiveBayes(as.formula(model), data=data.frame(train))
+
+    results_prob = predict(m1, newdata=data.frame(test), type="raw") 
+    results_prob = results_prob[,2]/rowSums(results_prob)
+    
+    
+    ytest = test[,test.column]
+    ytests <- c(ytests,ytest)
+    ptests <- c(ptests,results_prob)
+    
+    
+    # If prob > 0.5 then 1, else 0
+    results <- ifelse(results_prob > cutoff,1,0)
+    
+    # Actual answers
+    answers <- ytest
+    
+    # Accuracy calculation
+    misClasificError <- mean(answers != results)
+    
+    # Collecting results
+    acc[i] <- 1-misClasificError
+    
+    # Confusion matrix
+    cm <- confusionMatrix(data=results, reference=answers)
+    TP <- cm$table[1]
+    FP <- cm$table[2]
+    FN <- cm$table[3]
+    TN <- cm$table[4]
+    
+    Precision[i] <- TP/(TP + FP)
+    Recall[i] <- TP/(TP + FN)
+    Fscore[i] <- 2*Precision[i]*Recall[i]/(Precision[i] + Recall[i])
+    TNR[i] <- TN/(TN + FP)
+    TPR[i] <- TP/(TP + FN)
+    FPR[i] <- FP/(TN + FP)
+  }
+  
+  ROCdata=data.frame(predictions=ptests,labels=ytests)
+  pred <- prediction(ROCdata$predictions,ROCdata$labels)
+  auc <- performance(pred,"auc")
+  auc <- unlist(slot(auc, "y.values"))
+  
+  perf <- performance(pred, "sens", "fpr")
+  
+  plot(perf)
+  
+  print("Average accuracy of the model:")
+  print(mean(acc))
+  print("Average error of the model:")
+  print(1-mean(acc))
+  
+  print("Average Precision of the model:")
+  print(mean(Precision))
+  
+  print("Average Recall of the model:")
+  print(mean(Recall))
+  
+  print("Average Fscore of the model:")
+  print(mean(Fscore))
+  
+  print("Average specificity, of the model:")
+  print(mean(TNR))
+  
+  print("Average sensitivity, of the model:")
+  print(mean(TPR))
+  
+  print("Average FPR of the model:")
+  print(mean(FPR))
+  
+  print('Area Under The Curve:')
+  print(auc)
+  print(cm)
+}
+Evaluate_10fold_tree <- function(data,model,test.column){
+  # False positive rate
+  FPR <- NULL
+  # True negative rate
+  TNR <- NULL
+  # True positive rate
+  TPR <- NULL
+  # Accuracy
+  acc <- NULL
+  #Precision
+  Precision <- NULL
+  #Recall
+  Recall <- NULL
+  #F1
+  Fscore <- NULL
+  #Results
+  ytests <- c()
+  ptests <- c()
+  #Create 10 equally size folds
+  folds <- cut(seq(1,length(UniqueIDs)),breaks=10,labels=FALSE)
+  
+  #library(caret)  # confusion matrix
+  
+  #Perform 10 fold cross validation
+  for(i in 1:10){
+    #Segement your data by fold using the which() function 
+    test <- which(folds==i,arr.ind=TRUE)
+    trainIDS = UniqueIDs[-test]
+    testIDs = UniqueIDs[test]
+    train = Get.Set(data,trainIDS)
+    test = Get.Set(data,testIDs)
+    
+    m1 = rpart(model, data=train)
+    results_prob = predict(m1, newdata=test) 
+    
+    
+    
+    ytest = test[,test.column]
+    ytests <- c(ytests,ytest)
+    ptests <- c(ptests,results_prob)
+    
+    
+    # If prob > 0.5 then 1, else 0
+    results <- ifelse(results_prob > cutoff,1,0)
+    
+    # Actual answers
+    answers <- ytest
+    
+    # Accuracy calculation
+    misClasificError <- mean(answers != results)
+    
+    # Collecting results
+    acc[i] <- 1-misClasificError
+    
+    # Confusion matrix
+    cm <- confusionMatrix(data=results, reference=answers)
+    TP <- cm$table[1]
+    FP <- cm$table[2]
+    FN <- cm$table[3]
+    TN <- cm$table[4]
+    
+    Precision[i] <- TP/(TP + FP)
+    Recall[i] <- TP/(TP + FN)
+    Fscore[i] <- 2*Precision[i]*Recall[i]/(Precision[i] + Recall[i])
+    TNR[i] <- TN/(TN + FP)
+    TPR[i] <- TP/(TP + FN)
+    FPR[i] <- FP/(TN + FP)
+  }
+  
+  ROCdata=data.frame(predictions=ptests,labels=ytests)
+  pred <- prediction(ROCdata$predictions,ROCdata$labels)
+  auc <- performance(pred,"auc")
+  auc <- unlist(slot(auc, "y.values"))
+  
+  perf <- performance(pred, "sens", "fpr")
+  
+  plot(perf)
+  
+  print("Average accuracy of the model:")
+  print(mean(acc))
+  print("Average error of the model:")
+  print(1-mean(acc))
+  
+  print("Average Precision of the model:")
+  print(mean(Precision))
+  
+  print("Average Recall of the model:")
+  print(mean(Recall))
+  
+  print("Average Fscore of the model:")
+  print(mean(Fscore))
+  
+  print("Average specificity, of the model:")
+  print(mean(TNR))
+  
+  print("Average sensitivity, of the model:")
+  print(mean(TPR))
+  
+  print("Average FPR of the model:")
+  print(mean(FPR))
+  
+  print('Area Under The Curve:')
+  print(auc)
+  print(cm)
+}
+Evaluate_10fold_ada <- function(data,model,test.column){
+  # False positive rate
+  FPR <- NULL
+  # True negative rate
+  TNR <- NULL
+  # True positive rate
+  TPR <- NULL
+  # Accuracy
+  acc <- NULL
+  #Precision
+  Precision <- NULL
+  #Recall
+  Recall <- NULL
+  #F1
+  Fscore <- NULL
+  #Results
+  ytests <- c()
+  ptests <- c()
+  #Create 10 equally size folds
+  folds <- cut(seq(1,length(UniqueIDs)),breaks=10,labels=FALSE)
+  
+  #library(caret)  # confusion matrix
+  
+  #Perform 10 fold cross validation
+  for(i in 1:10){
+    #Segement your data by fold using the which() function 
+    test <- which(folds==i,arr.ind=TRUE)
+    trainIDS = UniqueIDs[-test]
+    testIDs = UniqueIDs[test]
+    train = Get.Set(data,trainIDS)
+    test = Get.Set(data,testIDs)
+    
+    m1 = ada(as.formula(model), data = train)
+    results_prob = predict(m1, newdata=test, type='probs')
+    #print(cbind(prob,as.character(test.set$TARGET_Adjusted)))
+    results_prob = results_prob[,2]/rowSums(results_prob)
+    
+    
+    
+    ytest = test[,test.column]
+    ytests <- c(ytests,ytest)
+    ptests <- c(ptests,results_prob)
+    
+    
+    # If prob > 0.5 then 1, else 0
+    results <- ifelse(results_prob > cutoff,1,0)
+    
+    # Actual answers
+    answers <- ytest
+    
+    # Accuracy calculation
+    misClasificError <- mean(answers != results)
+    
+    # Collecting results
+    acc[i] <- 1-misClasificError
+    
+    # Confusion matrix
+    cm <- confusionMatrix(data=results, reference=answers)
+    TP <- cm$table[1]
+    FP <- cm$table[2]
+    FN <- cm$table[3]
+    TN <- cm$table[4]
+    
+    Precision[i] <- TP/(TP + FP)
+    Recall[i] <- TP/(TP + FN)
+    Fscore[i] <- 2*Precision[i]*Recall[i]/(Precision[i] + Recall[i])
+    TNR[i] <- TN/(TN + FP)
+    TPR[i] <- TP/(TP + FN)
+    FPR[i] <- FP/(TN + FP)
+  }
+  
+  ROCdata=data.frame(predictions=ptests,labels=ytests)
+  pred <- prediction(ROCdata$predictions,ROCdata$labels)
+  auc <- performance(pred,"auc")
+  auc <- unlist(slot(auc, "y.values"))
+  
+  perf <- performance(pred, "sens", "fpr")
+  
+  plot(perf)
+  
+  print("Average accuracy of the model:")
+  print(mean(acc))
+  print("Average error of the model:")
+  print(1-mean(acc))
+  
+  print("Average Precision of the model:")
+  print(mean(Precision))
+  
+  print("Average Recall of the model:")
+  print(mean(Recall))
+  
+  print("Average Fscore of the model:")
+  print(mean(Fscore))
+  
+  print("Average specificity, of the model:")
+  print(mean(TNR))
+  
+  print("Average sensitivity, of the model:")
+  print(mean(TPR))
+  
+  print("Average FPR of the model:")
+  print(mean(FPR))
+  
+  print('Area Under The Curve:')
+  print(auc)
+  print(cm)
+}
+Evaluate_10fold_knn <- function(data,model,test.column){
+  # False positive rate
+  FPR <- NULL
+  # True negative rate
+  TNR <- NULL
+  # True positive rate
+  TPR <- NULL
+  # Accuracy
+  acc <- NULL
+  #Precision
+  Precision <- NULL
+  #Recall
+  Recall <- NULL
+  #F1
+  Fscore <- NULL
+  #Results
+  ytests <- c()
+  ptests <- c()
+  #Create 10 equally size folds
+  folds <- cut(seq(1,length(UniqueIDs)),breaks=10,labels=FALSE)
+  
+  #library(caret)  # confusion matrix
+  
+  #Perform 10 fold cross validation
+  for(i in 1:10){
+    #Segement your data by fold using the which() function 
+    test <- which(folds==i,arr.ind=TRUE)
+    trainIDS = UniqueIDs[-test]
+    testIDs = UniqueIDs[test]
+    
+    Personalities = c("cEXT", "cNEU", "cAGR", "cCON", "cOPN","Postive_Emotions", "Negative_Emotions")
+    Personalities = Personalities[Personalities != test.column]
+    
+    train = Get.Set(data,trainIDS)
+    train = train[ , !(names(train) %in% Personalities)]
+    test = Get.Set(data,testIDs)
+    test = test[ , !(names(test) %in% Personalities)]
+    
+    train <- data.frame(lapply(train, function(x) as.numeric(x)))
+    train <- scale(train) 
+    
+    test <- data.frame(lapply(test, function(x) as.numeric(x)))
+
+    results_prob = knn(train[ , !(names(train) %in% c(test.column))], test[ , !(names(train) %in% c(test.column))], cl=train[,test.column], prob=T)
+    results_prob = attr(results_prob,"prob")
+
+    
+    ytest = test[,test.column]
+    # If prob > 0.5 then 1, else 0
+    results <- as.numeric(results_prob > cutoff)
+    ytests <- c(ytests,ytest)
+    ptests <- c(ptests,results_prob)
+    
+    # Actual answers
+    answers <- ytest
+    
+    # Accuracy calculation
+    misClasificError <- mean(answers != results)
+    
+    # Collecting results
+    acc[i] <- 1-misClasificError
+    
+    # Confusion matrix
+    print("--------")
+    
+    print(results_prob)
+    print("--------")
+    #cm <- confusionMatrix(data=results, reference=answers)
+    cm = table(answers,factor(results,levels=c(0,1)))
+    
+    TP <- cm[1]
+    FP <- cm[2]
+    FN <- cm[3]
+    TN <- cm[4]
+    
+    Precision[i] <- TP/(TP + FP)
+    Recall[i] <- TP/(TP + FN)
+    Fscore[i] <- 2*Precision[i]*Recall[i]/(Precision[i] + Recall[i])
+    TNR[i] <- TN/(TN + FP)
+    TPR[i] <- TP/(TP + FN)
+    FPR[i] <- FP/(TN + FP)
+  }
+  
+  ROCdata=data.frame(predictions=ptests,labels=ytests)
+  pred <- prediction(ROCdata$predictions,ROCdata$labels)
+  auc <- performance(pred,"auc")
+  auc <- unlist(slot(auc, "y.values"))
+  
+  perf <- performance(pred, "sens", "fpr")
+  
+  plot(perf)
+  
+  print("Average accuracy of the model:")
+  print(mean(acc))
+  print("Average error of the model:")
+  print(1-mean(acc))
+  
+  print("Average Precision of the model:")
+  print(mean(Precision))
+  
+  print("Average Recall of the model:")
+  print(mean(Recall))
+  
+  print("Average Fscore of the model:")
+  print(mean(Fscore))
+  
+  print("Average specificity, of the model:")
+  print(mean(TNR))
+  
+  print("Average sensitivity, of the model:")
+  print(mean(TPR))
+  
+  print("Average FPR of the model:")
+  print(mean(FPR))
+  
+  print('Area Under The Curve:')
+  print(auc)
+  print(cm)
+}
+```
+
+
+```{r}
+Evaluate_10fold_glm(data,"cEXT ~ NETWORKSIZE","cEXT",0.5)
+Evaluate_10fold_nb(data,"cEXT ~ NETWORKSIZE","cEXT")
+Evaluate_10fold_tree(data,"cEXT ~ NETWORKSIZE","cEXT")
+Evaluate_10fold_ada(data,"cEXT ~ NETWORKSIZE","cEXT")
+Evaluate_10fold_knn(data,"cEXT ~ NETWORKSIZE","cEXT")
+
+Evaluate_10fold_glm(data,"cNEU ~ anger + anticipation + disgust + fear+ joy + sadness + surprise + trust + NETWORKSIZE","cNEU",0.5)
+Evaluate_10fold_nb(data,"cNEU ~ anger + anticipation + disgust + fear+ joy + sadness + surprise + trust + NETWORKSIZE","cNEU")
+Evaluate_10fold_tree(data,"cNEU ~ anger + anticipation + disgust + fear+ joy + sadness + surprise + trust + NETWORKSIZE","cNEU")
+Evaluate_10fold_ada(data,"cNEU ~ anger + anticipation + disgust + fear+ joy + sadness + surprise + trust + NETWORKSIZE","cNEU")
+Evaluate_10fold_knn(data,"cNEU ~ anger + anticipation + disgust + fear+ joy + sadness + surprise + trust + NETWORKSIZE","cNEU")
+
+Evaluate_10fold_glm(data,"cAGR ~ anticipation + disgust + fear+ joy + NETWORKSIZE","cAGR",0.5)
+Evaluate_10fold_nb(data,"cAGR ~ anticipation + disgust + fear+ joy + NETWORKSIZE","cAGR")
+Evaluate_10fold_tree(data,"cAGR ~ anticipation + disgust + fear+ joy + NETWORKSIZE","cAGR")
+Evaluate_10fold_ada(data,"cAGR ~ anticipation + disgust + fear+ joy + NETWORKSIZE","cAGR")
+Evaluate_10fold_knn(data,"cAGR ~ anticipation + disgust + fear+ joy + NETWORKSIZE","cAGR")
+
+Evaluate_10fold_glm(data,"cCON ~ anger + anticipation + disgust + fear+ joy + sadness + surprise + trust + NETWORKSIZE","cCON",0.5)
+Evaluate_10fold_tree(data,"cCON ~ anger + anticipation + disgust + fear+ joy + sadness + surprise + trust + NETWORKSIZE","cCON")
+Evaluate_10fold_ada(data,"cCON ~ anger + anticipation + disgust + fear+ joy + sadness + surprise + trust + NETWORKSIZE","cCON")
+Evaluate_10fold_nb(data,"cCON ~ anger + anticipation + disgust + fear+ joy + sadness + surprise + trust + NETWORKSIZE","cCON")
+Evaluate_10fold_knn(data,"cCON ~ anger + anticipation + disgust + fear+ joy + sadness + surprise + trust + NETWORKSIZE","cCON")
+
+Evaluate_10fold_glm(data,"cOPN ~ anger + anticipation + disgust + fear + joy + sadness + surprise + NETWORKSIZE","cOPN",0.8)
+Evaluate_10fold_tree(data,"cOPN ~ anger + anticipation + disgust + fear + joy + sadness + surprise + NETWORKSIZE","cOPN")
+Evaluate_10fold_ada(data,"cOPN ~ anger + anticipation + disgust + fear + joy + sadness + surprise + NETWORKSIZE","cOPN")
+Evaluate_10fold_nb(data,"cOPN ~ anger + anticipation + disgust + fear + joy + sadness + surprise + NETWORKSIZE","cOPN")
+Evaluate_10fold_knn(data,"cOPN ~ anger + anticipation + disgust + fear + joy + sadness + surprise + NETWORKSIZE","cOPN")
+```
+
