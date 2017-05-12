@@ -1,6 +1,6 @@
 ## Data Mining Final Group project: Relating Facebook Posts to Personality 
 
-[Project Slides](https://www.google.com)
+[Project Slides](https://github.com/yuqianz93320/Data-Mining-_-Relating-Facebook-Posts-to-Personality-/blob/master/FinalprojectSlides.pdf)
 
 #### Introduction 
 
